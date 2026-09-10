@@ -4,10 +4,6 @@
 *.pem
 *.key
 
-# Dotfiles / hidden dirs (e.g. .opencode, .git, .vscode)
-.*
-!.gitignore
-
 # Python
 __pycache__/
 *.py[cod]
@@ -30,7 +26,3 @@ postgres_data/
 Thumbs.db
 *:Zone.Identifier
 *Zone.Identifier*
-
-# Markdown docs (keep README.md only)
-*.md
-!README.md
