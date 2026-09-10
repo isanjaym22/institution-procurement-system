@@ -1,6 +1,6 @@
 import uuid
 from decimal import Decimal
-from sqlalchemy import String, Text, Numeric, Integer, ForeignKey, DateTime, func, Index
+from sqlalchemy import String, Text, Numeric, Integer, ForeignKey, DateTime, func, Index, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.db import Base
 
@@ -30,6 +30,13 @@ class Requisition(Base):
     status: Mapped[str] = mapped_column(String(50), default="DRAFT", nullable=False, index=True)
     justification: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str] = mapped_column(String(30), nullable=False)
+    # New workflow (Sep 2026): origin tracks who created the requisition —
+    # DEPARTMENT (staff), HOD, or OFFICE — and drives HOD-skip + acceptance routing.
+    # creator_role snapshots the exact role string at creation time.
+    origin: Mapped[str | None] = mapped_column(String(20))
+    creator_role: Mapped[str | None] = mapped_column(String(50))
+    # Step-1 AMC preference (Yes/No), kept through to Bursar's final AMC decision.
+    amc_preference: Mapped[bool | None] = mapped_column(Boolean)
     hod_remarks: Mapped[str | None] = mapped_column(Text)
     hod_decision_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     hod_decision_at: Mapped[object | None] = mapped_column(DateTime(timezone=True))

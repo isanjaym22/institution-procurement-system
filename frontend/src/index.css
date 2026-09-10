@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  --color-accent: #1e3a5f;
+  --color-accent-hover: #16294a;
+  --color-success: #047857;
+  --color-danger: #be123c;
+}
+
+body {
+  background-color: var(--color-stone-100);
+  color: var(--color-zinc-900);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

@@ -98,3 +98,21 @@ def assign_hod(department_id:str,user_id:str,db:Session=Depends(get_db),admin:Us
     d=db.query(Department).filter_by(id=department_id,institution_id=admin.institution_id).first();u=db.query(User).filter_by(id=user_id,institution_id=admin.institution_id).first()
     if not d or not u: raise HTTPException(404,"Department or staff member not found")
     u.department_id=d.id;u.role="HOD";d.hod_user_id=u.id;db.commit();return {"ok":True}
+
+@router.get("/login-audit")
+def login_audit(user_id: str | None = None, email: str | None = None,
+        success: bool | None = None, limit: int = 100, offset: int = 0,
+        db: Session = Depends(get_db), admin: User = Depends(require_roles("ADMIN"))):
+    # Admin-only visibility into login attempts: time, IP, user-agent, success.
+    from app.modules.procurement_models import LoginAudit
+    q = db.query(LoginAudit).filter(LoginAudit.institution_id == admin.institution_id)
+    if user_id: q = q.filter(LoginAudit.user_id == user_id)
+    if email: q = q.filter(LoginAudit.email_attempt.ilike(f"%{email.strip()}%"))
+    if success is not None: q = q.filter(LoginAudit.success.is_(success))
+    total = q.count()
+    rows = q.order_by(LoginAudit.created_at.desc()).offset(offset).limit(min(limit, 500)).all()
+    uids = list({r.user_id for r in rows if r.user_id})
+    names = {u.id: u.name for u in db.query(User).filter(User.id.in_(uids)).all()} if uids else {}
+    return {"total": total, "rows": [{"id": r.id, "user_id": r.user_id,
+        "user_name": names.get(r.user_id or ""), "email": r.email_attempt, "success": r.success,
+        "ip_address": r.ip_address, "user_agent": r.user_agent, "created_at": r.created_at} for r in rows]}

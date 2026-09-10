@@ -21,6 +21,7 @@ class RequisitionCreate(BaseModel):
     category: str = Field(pattern="^(LAB|NON_LAB)$")
     justification: str = Field(min_length=5)
     items: list[RequisitionItemCreate] = Field(min_length=1)
+    amc_preference: bool = False
 
 class PrincipalDecision(BaseModel):
     remarks: NonBlankRemark
@@ -49,6 +50,9 @@ class RequisitionOut(BaseModel):
     status: str
     category: str
     justification: str
+    origin: str | None
+    creator_role: str | None
+    amc_preference: bool | None
     hod_remarks: str | None
     hod_decision_by: str | None
     hod_decision_at: datetime | None
@@ -58,74 +62,46 @@ class RequisitionOut(BaseModel):
     created_at: datetime | None
     items: list[RequisitionItemOut]
 
-class FinanceReviewIn(BaseModel):
-    decision: str = Field(pattern="^(APPROVE|RETURN|REJECT)$")
-    budget_head: str | None = None
-    sub_head: str | None = None
+class FinanceForwardIn(BaseModel):
+    # Head enum: Recurring | Fixed Asset | Other (custom text mandatory when OTHER).
+    budget_head: str = Field(pattern="^(RECURRING|FIXED_ASSET|OTHER)$")
+    head_other_text: str | None = None
+    # Sub-head is always mandatory (free text).
+    sub_head: str = Field(min_length=1, max_length=100)
+    # Indicative figures only — informational, no blocking validation.
     approved_amount: Decimal | None = Field(default=None, gt=0)
+    amount_remark: str | None = None
+    # AMC recommendation is mandatory Boolean.
+    amc_recommendation: bool
     remarks: NonBlankRemark
 
-class ProcurementDecisionIn(BaseModel):
-    method: str = Field(pattern="^(DIRECT|QUOTATION|TENDER|E_TENDER)$")
+class PurchaseMethodIn(BaseModel):
+    # Direct | Quotation | Tender | E-Tender | Other (custom text mandatory when OTHER).
+    method: str = Field(pattern="^(DIRECT|QUOTATION|TENDER|E_TENDER|OTHER)$")
+    method_other_text: str | None = None
     meeting_no: str | None = None
     rule_reference: str | None = None
     remarks: NonBlankRemark
 
-class VendorSelectionIn(BaseModel):
-    vendor_name: str = Field(min_length=2, max_length=200)
-    gstin: str | None = None
-    contact: str | None = None
-    remarks: NonBlankRemark
+class AcceptanceCompleteIn(BaseModel):
+    # Stock-detail fields recorded at acceptance. All optional; shown on PDF when present.
+    brand_name: str | None = Field(default=None, max_length=200)
+    specification: str | None = None
+    manufacturing_date: datetime | None = None
+    expiry_date: datetime | None = None
+    quantity_received: int | None = Field(default=None, gt=0)
+    item_asset_id: str | None = Field(default=None, max_length=100)
+    acceptance_date: datetime | None = None
+    accepted_by: str | None = Field(default=None, max_length=150)
+    remarks: str | None = None
 
-class DirectPurchaseIn(BaseModel):
-    vendor_name: str = Field(min_length=2, max_length=200)
-    contact: str | None = None
-    po_number: str = Field(min_length=2, max_length=100)
-    total_amount: Decimal = Field(gt=0)
-    remarks: NonBlankRemark
-
-class PurchaseOrderIn(BaseModel):
-    po_number: str = Field(min_length=2, max_length=100)
-    total_amount: Decimal = Field(gt=0)
-    warranty_months: int | None = Field(default=None, ge=0)
-    amc_required: bool = False
-    delivery_terms: str | None = None
-    remarks: NonBlankRemark
-
-class DeliveryIn(BaseModel):
-    invoice_number: str | None = None
-    challan_number: str | None = None
-    remarks: NonBlankRemark
-
-class AcceptanceIn(BaseModel):
-    decision: str = Field(pattern="^(ACCEPT|PARTIAL|REJECT)$")
-    remarks: NonBlankRemark
-
-class StockEntryIn(BaseModel):
-    register_type: str = Field(pattern="^(STOCK|ASSET)$")
-    asset_id: str | None = None
-    serial_no: str | None = None
-    remarks: NonBlankRemark
-
-class BillIn(BaseModel):
-    invoice_number: str
-    amount: Decimal = Field(gt=0)
-    remarks: NonBlankRemark
-
-class PaymentIn(BaseModel):
-    payment_reference: str
-    amount: Decimal = Field(gt=0)
-    remarks: NonBlankRemark
-
-class UCIn(BaseModel):
-    certificate_no: str
-    remarks: NonBlankRemark
-
-class AMCIn(BaseModel):
-    start_date: datetime
-    end_date: datetime
-    contract_no: str | None = None
-    remarks: NonBlankRemark
-
-class CloseIn(BaseModel):
-    remarks: NonBlankRemark
+class BursarRecordIn(BaseModel):
+    # Every field optional. Whatever is present appears on the PDF; nothing is
+    # validated as mandatory and nothing blocks completion.
+    cheque_number: str | None = Field(default=None, max_length=100)
+    transaction_number: str | None = Field(default=None, max_length=100)
+    payment_reference: str | None = Field(default=None, max_length=120)
+    amount: Decimal | None = Field(default=None, gt=0)
+    payment_date: datetime | None = None
+    amc_final: bool | None = None
+    remarks: str | None = None

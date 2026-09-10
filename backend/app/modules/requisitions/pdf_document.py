@@ -38,13 +38,18 @@ FILL = HexColor("#eef1f4")
 IST = timezone(timedelta(hours=5, minutes=30), "IST")
 
 STATUS_LABEL = {
-    "DRAFT": "Draft (with the Department)",
+    "DRAFT": "Draft (with the creator)",
     "SUBMITTED": "Under consideration of the Head of Department",
     "PRINCIPAL_REVIEW": "Under consideration of the Principal",
-    "RETURNED_TO_DEPARTMENT": "Returned to the Department",
     "HOD_REJECTED": "Rejected by the Head of Department (Closed)",
     "PRINCIPAL_REJECTED": "Rejected by the Principal (Closed)",
     "FINANCE_REVIEW": "Under consideration of the Finance Committee",
+    "METHOD_PENDING": "With the Purchase Committee (method decision)",
+    "WO_PENDING": "With the Purchase Committee (work order)",
+    "ACCEPTANCE": "Acceptance pending",
+    "BURSAR_REVIEW": "With Accounts (payment recording)",
+    "COMPLETED": "Completed",
+    "RETURNED_TO_DEPARTMENT": "Returned to the Department",
     "BUDGET_ALLOCATED": "Budget allocated; with the Purchase Committee",
     "DIRECT_PURCHASE": "Direct purchase by the Department",
     "FINANCE_REJECTED": "Rejected by the Finance Committee (Closed)",
@@ -66,29 +71,35 @@ STATUS_LABEL = {
 
 ACTION_LABEL = {
     "SUBMIT": "Requisition submitted",
+    "SUBMIT_DIRECT": "Requisition submitted (HOD step not applicable)",
     "HOD_APPROVE": "Recommended by the Head of Department",
     "HOD_REJECT": "Rejected by the Head of Department",
     "HOD_RETURN": "Returned by the Head of Department for correction",
     "RESUBMIT": "Requisition resubmitted after correction",
     "PRINCIPAL_APPROVE": "Forwarded to the Finance Committee by the Principal",
-    "PRINCIPAL_APPROVE_DIRECT": "Approved for direct purchase by the Principal",
+    "PRINCIPAL_APPROVE_DIRECT": "Approved for direct acceptance by the Principal",
     "PRINCIPAL_REJECT": "Rejected by the Principal",
     "PRINCIPAL_RETURN": "Returned by the Principal for correction",
+    "FINANCE_FORWARD": "Forwarded to the Purchase Committee by Finance",
     "FINANCE_APPROVE": "Budget allocated by the Finance Committee",
     "FINANCE_RETURN": "Returned by the Finance Committee for correction",
     "FINANCE_REJECT": "Rejected by the Finance Committee",
+    "METHOD_DECIDED": "Procurement method decided",
     "PROCUREMENT_METHOD_DECIDED": "Procurement method decided",
+    "WO_UPLOADED": "Work order uploaded",
     "VENDOR_SELECTED": "Vendor selected",
     "PO_ISSUED": "Purchase order issued",
     "DIRECT_PURCHASED": "Direct purchase completed by the Department",
     "DELIVERED": "Goods received",
     "ACCEPTED": "Departmental acceptance completed",
+    "ACCEPTANCE_DONE": "Acceptance completed",
     "PARTIALLY_ACCEPTED": "Departmental acceptance completed (partial)",
     "REJECT_DELIVERY": "Delivery rejected at acceptance",
     "STOCK_UPDATED": "Stock register updated",
     "BILL_SUBMITTED": "Bill submitted",
     "BILL_VERIFIED": "Bill verified",
     "PAYMENT_COMPLETED": "Payment completed",
+    "PAYMENT_RECORDED": "Payment recorded by Accounts",
     "UC_GENERATE": "Utilisation certificate generated",
     "AMC_START": "Annual Maintenance Contract commenced",
     "CLOSE": "Procurement file closed",
@@ -97,6 +108,7 @@ ACTION_LABEL = {
 ROLE_LABEL = {
     "DEPARTMENT_USER": "Department",
     "HOD": "Head of Department",
+    "OFFICE": "Office",
     "PRINCIPAL": "Principal",
     "FINANCE": "Finance Committee",
     "BURSAR": "Accounts / Bursar",
@@ -112,7 +124,11 @@ ROLE_LABEL = {
 }
 
 CATEGORY_LABEL = {"LAB": "Laboratory", "NON_LAB": "Non-Laboratory"}
-FINANCE_DECISION = {"APPROVE": "Approved", "RETURN": "Returned", "REJECT": "Rejected"}
+ORIGIN_LABEL = {"DEPARTMENT": "Department", "HOD": "Head of Department", "OFFICE": "Office"}
+HEAD_LABEL = {"RECURRING": "Recurring", "FIXED_ASSET": "Fixed Asset", "OTHER": "Other"}
+METHOD_LABEL = {"DIRECT": "Direct", "QUOTATION": "Quotation", "TENDER": "Tender",
+                "E_TENDER": "E-Tender", "OTHER": "Other"}
+FINANCE_DECISION = {"APPROVE": "Approved", "FORWARD": "Forwarded", "RETURN": "Returned", "REJECT": "Rejected"}
 ACCEPT_DECISION = {"ACCEPT": "Accepted", "ACCEPTED": "Accepted",
                    "PARTIAL": "Partially accepted", "PARTIALLY_ACCEPTED": "Partially accepted",
                    "REJECT": "Rejected", "REJECT_DELIVERY": "Rejected"}
@@ -286,7 +302,9 @@ def build_procurement_pdf(req, data: dict, events: list, users: dict) -> bytes:
         ("Requested by", req.faculty_name_snapshot),
         ("Employee ID", req.faculty_employee_id_snapshot),
         ("Designation", req.faculty_designation_snapshot),
+        ("Raised by", ORIGIN_LABEL.get(getattr(req, "origin", None) or "", getattr(req, "origin", None) or "")),
         ("Procurement Category", CATEGORY_LABEL.get(req.category, req.category)),
+        ("AMC Required (at requisition)", "Yes" if getattr(req, "amc_preference", False) else "No"),
         ("Current Status", STATUS_LABEL.get(req.status, req.status)),
         ("Date of Requisition", fmt_date(req.created_at)),
     ]
@@ -319,9 +337,12 @@ def build_procurement_pdf(req, data: dict, events: list, users: dict) -> bytes:
     story.append(Spacer(1, 2 * mm))
     totals = [[P("<b>Estimated Total</b>", "head"), P(f"<b>{inr(estimated)}</b>", "cell_right")]]
     fr = data.get("finance_review")
-    if fr and fr.decision == "APPROVE" and fr.approved_amount is not None:
-        totals.append([P("<b>Amount Approved by Finance Committee</b>", "head"),
+    if fr and fr.approved_amount is not None:
+        totals.append([P("<b>Indicative Amount (Finance)</b>", "head"),
                        P(f"<b>{inr(fr.approved_amount)}</b>", "cell_right")])
+    if fr and fr.amount_remark:
+        totals.append([P("<b>Amount Remark (Finance)</b>", "head"),
+                       P(esc(fr.amount_remark), "cell")])
     po = data.get("purchase_order")
     if po:
         totals.append([P("<b>Purchase Order Amount</b>", "head"),
@@ -336,7 +357,7 @@ def build_procurement_pdf(req, data: dict, events: list, users: dict) -> bytes:
     HOD_WORD = {"HOD_APPROVE": "Recommended", "HOD_RETURN": "Returned for correction",
                 "HOD_REJECT": "Not recommended"}
     PRINC_WORD = {"PRINCIPAL_APPROVE": "Forwarded to the Finance Committee",
-                  "PRINCIPAL_APPROVE_DIRECT": "Approved for direct purchase",
+                  "PRINCIPAL_APPROVE_DIRECT": "Approved for direct acceptance",
                   "PRINCIPAL_RETURN": "Returned to the Department",
                   "PRINCIPAL_REJECT": "Not recommended"}
     dec_rows = [[P("<b>Authority</b>", "head"), P("<b>Decision</b>", "head"),
@@ -356,6 +377,17 @@ def build_procurement_pdf(req, data: dict, events: list, users: dict) -> bytes:
             fin_dec = (f"Budget allocated under Head \u201c{fr.budget_head}\u201d, "
                        f"Sub-head \u201c{fr.sub_head}\u201d for {inr(fr.approved_amount)}"
                        if fr.approved_amount is not None else "Budget allocated")
+        elif fr.decision == "FORWARD":
+            head_txt = HEAD_LABEL.get(fr.budget_head or "", fr.budget_head or "")
+            if (fr.budget_head or "") == "OTHER" and fr.head_other_text:
+                head_txt = f"Other \u2014 {fr.head_other_text}"
+            bits = [f"Head \u201c{head_txt}\u201d", f"Sub-head \u201c{fr.sub_head}\u201d"]
+            if fr.approved_amount is not None:
+                bits.append(f"indicative {inr(fr.approved_amount)}")
+            if fr.amount_remark:
+                bits.append(fr.amount_remark)
+            bits.append("AMC recommended" if fr.amc_recommendation else "AMC not recommended")
+            fin_dec = "Forwarded to the Purchase Committee (" + "; ".join(bits) + ")"
         dec_rows.append([P(f"Finance Committee{f'<br/><font size=7.5 color=\"#555555\">' + esc(fin_actor) + '</font>' if fin_actor else ''}"),
                          P(esc(fin_dec)), P(esc(fmt_dt(fr.decided_at))), P(esc(fr.remarks))])
     if len(dec_rows) > 1:
@@ -364,11 +396,13 @@ def build_procurement_pdf(req, data: dict, events: list, users: dict) -> bytes:
 
     # ---- Procurement / execution ----
     pd = data.get("procurement_decision")
-    if pd or po:
-        section("Purchase Order and Supplier")
+    wo = data.get("work_order")
+    if pd or po or wo:
+        section("Purchase Committee and Work Order")
         if pd:
-            method = {"DIRECT": "Direct purchase", "QUOTATION": "Quotation",
-                      "TENDER": "Tender", "E_TENDER": "E-tender"}.get(pd.method, pd.method)
+            method = METHOD_LABEL.get(pd.method, pd.method)
+            if pd.method == "OTHER" and getattr(pd, "method_other_text", None):
+                method = f"Other \u2014 {pd.method_other_text}"
             vendor_name = data.get("selected_vendor_name") or ""
             po_vendor = data.get("po_vendor")
             if po_vendor and not vendor_name:
@@ -405,13 +439,19 @@ def build_procurement_pdf(req, data: dict, events: list, users: dict) -> bytes:
             if po.delivery_terms:
                 po_pairs.append(("Delivery Terms", po.delivery_terms))
             story.append(_table([[P(f"<b>{escape(k)}</b>", "head"), P(esc(v))]
-                                 for k, v in po_pairs if v],
+                             for k, v in po_pairs if v],
+                            [W * 0.30, W * 0.70], header=False))
+        if wo:
+            story.append(Spacer(1, 2 * mm))
+            story.append(_table([[P("<b>Work Order</b>", "head"),
+                                  P(f"Uploaded on {esc(fmt_date(wo.uploaded_at))} "
+                                    f"(copy retained in the system)")]],
                                 [W * 0.30, W * 0.70], header=False))
 
     dl = data.get("delivery")
     ac = data.get("acceptance")
     if dl or ac:
-        section("Delivery and Departmental Acceptance")
+        section("Delivery and Acceptance")
         rows = []
         if dl:
             bits = []
@@ -425,11 +465,26 @@ def build_procurement_pdf(req, data: dict, events: list, users: dict) -> bytes:
                            f"{'<br/>' + esc(dl.remarks) if dl.remarks else ''}")])
         if ac:
             ac_actor = users.get(ac.actor_id, ("", ""))[0]
-            rows.append([P("<b>Departmental Acceptance</b>", "head"),
-                         P(f"{esc(ACCEPT_DECISION.get(ac.decision, ac.decision))}"
-                           f" — {esc(fmt_date(ac.accepted_at))}"
-                           f"{'<br/><font size=7.5 color=\"#555555\">Accepted by ' + esc(ac_actor) + '</font>' if ac_actor else ''}"
-                           f"{'<br/>' + esc(ac.remarks) if ac.remarks else ''}")])
+            ac_bits = [f"{esc(ACCEPT_DECISION.get(ac.decision, ac.decision))}"
+                       f" — {esc(fmt_date(ac.accepted_at))}"]
+            if ac_actor:
+                ac_bits.append(f"Accepted by {esc(ac_actor)}")
+            stock_fields = [
+                ("Brand", getattr(ac, "brand_name", None)),
+                ("Specification", getattr(ac, "specification", None)),
+                ("Manufacturing Date", fmt_date(getattr(ac, "manufacturing_date", None)) or None),
+                ("Expiry Date", fmt_date(getattr(ac, "expiry_date", None)) or None),
+                ("Quantity Received", getattr(ac, "quantity_received", None)),
+                ("Asset / Item ID", getattr(ac, "item_asset_id", None)),
+                ("Date of Acceptance", fmt_date(getattr(ac, "acceptance_date", None)) or None),
+                ("Accepted By (name)", getattr(ac, "accepted_by", None)),
+            ]
+            for k, v in stock_fields:
+                if v not in (None, ""):
+                    ac_bits.append(f"{k}: {esc(v)}")
+            if ac.remarks:
+                ac_bits.append(esc(ac.remarks))
+            rows.append([P("<b>Acceptance</b>", "head"), P("<br/>".join(ac_bits))])
         story.append(_table(rows, [W * 0.30, W * 0.70], header=False))
 
     st = data.get("stock_entry")
@@ -451,6 +506,7 @@ def build_procurement_pdf(req, data: dict, events: list, users: dict) -> bytes:
     bill = data.get("bill")
     pay = data.get("payment")
     uc = data.get("uc")
+    amc = data.get("amc")
     if bill or pay or uc:
         section("Accounts, Payment and Utilisation")
         rows = []
@@ -460,18 +516,45 @@ def build_procurement_pdf(req, data: dict, events: list, users: dict) -> bytes:
                            f" — {'Verified' if bill.verified else 'Submitted, verification pending'}"
                            f"{'<br/>' + esc(bill.remarks) if bill.remarks else ''}")])
         if pay:
-            rows.append([P("<b>Payment</b>", "head"),
-                         P(f"{inr(pay.amount)} vide {esc(pay.payment_reference)}"
-                           f" on {esc(fmt_date(pay.payment_date))}")])
+            pay_bits = []
+            if pay.payment_reference:
+                pay_bits.append(f"Ref. {esc(pay.payment_reference)}")
+            if getattr(pay, "cheque_number", None):
+                pay_bits.append(f"Cheque No. {esc(pay.cheque_number)}")
+            if getattr(pay, "transaction_number", None):
+                pay_bits.append(f"Transaction No. {esc(pay.transaction_number)}")
+            if pay.amount is not None:
+                pay_bits.insert(0, inr(pay.amount))
+            if pay.payment_date:
+                pay_bits.append(f"on {esc(fmt_date(pay.payment_date))}")
+            if getattr(pay, "document_path", None):
+                pay_bits.append("(supporting document retained in the system)")
+            pay_line = " ".join(pay_bits) if pay_bits else "Recorded"
+            rows.append([P("<b>Payment</b>", "head"), P(pay_line)])
         if uc:
             rows.append([P("<b>Utilisation Certificate</b>", "head"),
                          P(f"No. {esc(uc.certificate_no)} issued on {esc(fmt_date(uc.issued_at))}"
                            f"{'<br/>' + esc(uc.remarks) if uc.remarks else ''}")])
         story.append(_table(rows, [W * 0.30, W * 0.70], header=False))
 
-    amc = data.get("amc")
-    if amc:
+    # ---- AMC chain: requisition preference -> finance recommendation -> bursar final ----
+    amc_pref = getattr(req, "amc_preference", None)
+    amc_rec = fr.amc_recommendation if fr else None
+    amc_final = getattr(pay, "amc_final", None) if pay else None
+    if amc_pref or amc_rec or amc_final is not None or amc:
         section("Annual Maintenance Contract")
+        chain = [("At Requisition", "Yes" if amc_pref else "No")]
+        if amc_rec is not None:
+            chain.append(("Finance Recommendation", "Yes" if amc_rec else "No"))
+        if amc_final is not None:
+            chain.append(("Final (Accounts)", "Yes" if amc_final else "No"))
+        story.append(_table([[P(f"<b>{escape(k)}</b>", "head"), P(esc(v))]
+                             for k, v in chain],
+                            [W * 0.30, W * 0.70], header=False))
+        story.append(Spacer(1, 2 * mm))
+    if amc:
+        if not (amc_pref or amc_rec or amc_final is not None):
+            section("Annual Maintenance Contract")
         amc_pairs = [("Contract Period",
                       f"{fmt_date(amc.start_date)} to {fmt_date(amc.end_date)}")]
         if amc.contract_no:
@@ -516,4 +599,64 @@ def build_procurement_pdf(req, data: dict, events: list, users: dict) -> bytes:
     maker = NumberedCanvas
     proc_id = req.procurement_id or ""
     doc.build(story, canvasmaker=lambda *a, **k: maker(*a, proc_id=proc_id, **k))
+    return buf.getvalue()
+
+
+def build_report_pdf(rows: list[dict], from_date: str, to_date: str, institution: str) -> bytes:
+    """Date-wise purchase report over completed/accepted records.
+
+    One landscape row per requisition: Procurement ID, Date (requisition
+    creation date), Department, Requester, Category, Budget Head, Method, AMC,
+    Total, Status. Terminal rejects never reach this function (router filters).
+    """
+    S = _styles()
+    story = []
+
+    def P(text, style="cell"):
+        return Paragraph(text, S[style])
+
+    story.append(Paragraph(escape(COLLEGE_NAME), S["college"]))
+    story.append(Paragraph(escape(COLLEGE_ADDRESS), S["address"]))
+    story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph(f'<font size="13"><b>PURCHASE REPORT</b></font>', S["center"]))
+    story.append(Paragraph(
+        f'<font size="9" color="#555555">{escape(institution)} &nbsp;|&nbsp; '
+        f'{escape(from_date)} to {escape(to_date)} &nbsp;|&nbsp; {len(rows)} record(s)</font>',
+        S["center"]))
+    story.append(Spacer(1, 4 * mm))
+
+    W = A4[0] - 36 * mm
+    widths = [W * 0.16, W * 0.10, W * 0.12, W * 0.13, W * 0.09,
+              W * 0.10, W * 0.08, W * 0.05, W * 0.10, W * 0.07]
+    table_rows = [[P("<b>Procurement ID</b>", "head"), P("<b>Date</b>", "head"),
+                   P("<b>Department</b>", "head"), P("<b>Requester</b>", "head"),
+                   P("<b>Category</b>", "head"), P("<b>Head</b>", "head"),
+                   P("<b>Method</b>", "head"), P("<b>AMC</b>", "head"),
+                   P("<b>Total</b>", "head"), P("<b>Status</b>", "head")]]
+    for r in rows:
+        amc = r.get("amc")
+        table_rows.append([
+            P(esc(r.get("procurement_id"))),
+            P(esc(r.get("date"))),
+            P(esc(r.get("department") or r.get("department_code"))),
+            P(esc(r.get("faculty"))),
+            P(esc(CATEGORY_LABEL.get(r.get("category") or "", r.get("category") or ""))),
+            P(esc(HEAD_LABEL.get(r.get("head") or "", r.get("head") or "") or "&mdash;")),
+            P(esc(METHOD_LABEL.get(r.get("method") or "", r.get("method") or "") or "&mdash;")),
+            P("Yes" if amc else ("No" if amc is False else "&mdash;")),
+            P(esc(inr(r.get("total") or 0)), "cell_right"),
+            P(esc(STATUS_LABEL.get(r.get("status") or "", r.get("status") or ""))),
+        ])
+    if not rows:
+        table_rows.append([P("No completed or accepted procurements in this period.", "cell")] + [P("")] * 9)
+    story.append(_table(table_rows, widths, align_right=(8,)))
+
+    doc = BaseDocTemplate(io.BytesIO(), pagesize=A4,
+                          leftMargin=18 * mm, rightMargin=18 * mm,
+                          topMargin=15 * mm, bottomMargin=18 * mm,
+                          showBoundary=0)
+    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="main")
+    doc.addPageTemplates([PageTemplate(id="page", frames=[frame])])
+    buf = doc.filename
+    doc.build(story, canvasmaker=lambda *a, **k: NumberedCanvas(*a, proc_id="Purchase Report", **k))
     return buf.getvalue()

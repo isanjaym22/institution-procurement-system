@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
@@ -42,6 +42,28 @@ def startup():
         "ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS faculty_designation_snapshot VARCHAR(120)",
         "ALTER TABLE procurement_decisions ADD COLUMN IF NOT EXISTS selected_vendor_id VARCHAR(36)",
         "ALTER TABLE finance_reviews ADD COLUMN IF NOT EXISTS sub_head VARCHAR(100)",
+        # New workflow (Sep 2026) columns.
+        "ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS origin VARCHAR(20)",
+        "ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS creator_role VARCHAR(50)",
+        "ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS amc_preference BOOLEAN",
+        "ALTER TABLE finance_reviews ADD COLUMN IF NOT EXISTS head_other_text VARCHAR(200)",
+        "ALTER TABLE finance_reviews ADD COLUMN IF NOT EXISTS amount_remark TEXT",
+        "ALTER TABLE finance_reviews ADD COLUMN IF NOT EXISTS amc_recommendation BOOLEAN",
+        "ALTER TABLE procurement_decisions ADD COLUMN IF NOT EXISTS method_other_text VARCHAR(200)",
+        "ALTER TABLE acceptances ADD COLUMN IF NOT EXISTS brand_name VARCHAR(200)",
+        "ALTER TABLE acceptances ADD COLUMN IF NOT EXISTS specification TEXT",
+        "ALTER TABLE acceptances ADD COLUMN IF NOT EXISTS manufacturing_date TIMESTAMPTZ",
+        "ALTER TABLE acceptances ADD COLUMN IF NOT EXISTS expiry_date TIMESTAMPTZ",
+        "ALTER TABLE acceptances ADD COLUMN IF NOT EXISTS quantity_received INTEGER",
+        "ALTER TABLE acceptances ADD COLUMN IF NOT EXISTS item_asset_id VARCHAR(100)",
+        "ALTER TABLE acceptances ADD COLUMN IF NOT EXISTS acceptance_date TIMESTAMPTZ",
+        "ALTER TABLE acceptances ADD COLUMN IF NOT EXISTS accepted_by VARCHAR(150)",
+        "ALTER TABLE payments ALTER COLUMN payment_reference DROP NOT NULL",
+        "ALTER TABLE payments ALTER COLUMN amount DROP NOT NULL",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS cheque_number VARCHAR(100)",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS transaction_number VARCHAR(100)",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS document_path VARCHAR(500)",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS amc_final BOOLEAN",
         "CREATE INDEX IF NOT EXISTS ix_departments_institution_id ON departments(institution_id)",
         "CREATE INDEX IF NOT EXISTS ix_users_department_id ON users(department_id)",
         "CREATE INDEX IF NOT EXISTS ix_requisitions_department_id ON requisitions(department_id)",
@@ -73,7 +95,7 @@ def seed_demo_data():
             db.add(inst); db.flush()
 
         departments = {}
-        for code, name in [("CS", "Computer Science"), ("PHY", "Physics"), ("MATH", "Mathematics")]:
+        for code, name in [("CS", "Computer Science"), ("PHY", "Physics"), ("MATH", "Mathematics"), ("OFF", "General Office")]:
             dept = db.query(Department).filter_by(code=code, institution_id=inst.id).first()
             if not dept:
                 dept = Department(name=name, code=code, institution_id=inst.id)
@@ -94,6 +116,7 @@ def seed_demo_data():
             ("Acceptance Officer", "acceptance@example.com", "ACCEPTANCE_OFFICER", None, "ACC001", "Acceptance Officer"),
             ("AMC Officer", "amc@example.com", "AMC_OFFICER", None, "AMC001", "AMC Officer"),
             ("Principal", "principal@example.com", "PRINCIPAL", None, "PRINCIPAL", "Principal"),
+            ("Office Staff", "office@example.com", "OFFICE", "OFF", "OFF001", "Office Staff"),
             ("System Administrator", "admin@example.com", "ADMIN", None, "ADMIN001", "Administrator"),
         ]
         for name, email, role, code, employee_id, designation in demo_users:
@@ -115,7 +138,7 @@ def seed_demo_data():
         for code, email in [("CS","hod@example.com"),("PHY","hod.physics@example.com"),("MATH","hod.math@example.com")]:
             hod=db.query(User).filter_by(email=email).first()
             if hod: departments[code].hod_user_id=hod.id
-        for name in ["Assistant Professor","Associate Professor","Professor","Head of Department","Principal","Finance Officer","Bursar","Store Officer","Administrator"]:
+        for name in ["Assistant Professor","Associate Professor","Professor","Head of Department","Principal","Finance Officer","Bursar","Store Officer","Office Staff","Administrator"]:
             if not db.query(Designation).filter_by(institution_id=inst.id,name=name).first(): db.add(Designation(institution_id=inst.id,name=name,is_active=True))
         db.commit()
     finally:
@@ -126,9 +149,18 @@ def health():
     return {"status": "ok"}
 
 @app.post("/api/v1/auth/login", response_model=LoginResponse)
-def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    from app.modules.procurement_models import LoginAudit
     user = db.query(User).filter(User.email == form.username).first()
-    if not user or not verify_password(form.password, user.password_hash):
+    ok = bool(user and verify_password(form.password, user.password_hash))
+    # Admin-visible audit of every login attempt (time/IP/user-agent/success).
+    db.add(LoginAudit(user_id=user.id if user else None,
+        institution_id=user.institution_id if user else None,
+        email_attempt=(form.username or "")[:255], success=ok,
+        ip_address=request.client.host if request.client else None,
+        user_agent=(request.headers.get("user-agent") or "")[:500]))
+    db.commit()
+    if not ok:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     return {"access_token": create_access_token(user.id), "user": user}
 
@@ -142,6 +174,10 @@ class PasswordChangeIn(BaseModel):
 
 @app.post("/api/v1/auth/change-password")
 def change_password(data: PasswordChangeIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # Locked down: only ADMIN manages passwords (own change included, verified by
+    # current password). Everyone else goes through the administrator.
+    if user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Only administrators can change passwords")
     if not verify_password(data.current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     if len(data.new_password) < 8:
@@ -157,7 +193,7 @@ def change_password(data: PasswordChangeIn, db: Session = Depends(get_db), user:
 @app.get("/api/v1/departments", response_model=list[DepartmentOut])
 def departments(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     q = db.query(Department).filter(Department.institution_id == user.institution_id, Department.is_active.is_(True))
-    if user.role in {"DEPARTMENT_USER", "HOD"}:
+    if user.role in {"DEPARTMENT_USER", "HOD", "OFFICE"}:
         q = q.filter(Department.id == user.department_id)
     return q.order_by(Department.name.asc()).all()
 
@@ -165,7 +201,7 @@ def departments(db: Session = Depends(get_db), user: User = Depends(get_current_
 def faculty(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     q = db.query(User).filter(User.institution_id == user.institution_id, User.is_active.is_(True),
                               User.role.in_(["DEPARTMENT_USER", "HOD"]))
-    if user.role in {"DEPARTMENT_USER", "HOD"}:
+    if user.role in {"DEPARTMENT_USER", "HOD", "OFFICE"}:
         q = q.filter(User.department_id == user.department_id)
     return q.order_by(User.name.asc()).all()
 

@@ -21,7 +21,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://procurement:change-me@db:5432/procurement}
       JWT_SECRET: ${JWT_SECRET:-change-this-development-secret}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-60}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
     ports:
       - "8000:8000"
     depends_on:
@@ -29,11 +29,13 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - procurement_uploads:/data/uploads
 
   frontend:
-    build: ./frontend
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api/v1}
     ports:
       - "3000:3000"
     depends_on:
@@ -41,3 +43,4 @@ services:
 
 volumes:
   postgres_data:
+  procurement_uploads:
