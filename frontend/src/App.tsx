@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   fetchMe,
+  friendlyError,
   getToken,
   listReqs,
   login,
@@ -162,7 +163,7 @@ export default function App() {
       });
       setQueue(reqs);
     } catch (e) {
-      setQueueError(e instanceof Error ? e.message : "Could not load queue");
+      setQueueError(friendlyError(e, "Could not load queue"));
     } finally {
       setQueueLoading(false);
     }
@@ -182,7 +183,7 @@ export default function App() {
       setTokenState(access_token);
       setUser(u);
     } catch (err) {
-      setLoginError(err instanceof Error ? err.message : "Login failed");
+      setLoginError(friendlyError(err, "Login failed"));
     } finally {
       setLoggingIn(false);
     }

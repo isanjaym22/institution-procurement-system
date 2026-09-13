@@ -118,15 +118,81 @@ export interface LoginAuditEvent {
 
 // ---- Helpers ----
 
+// Friendly labels for backend field names seen in 422 validation errors.
+const FIELD_LABELS: Record<string, string> = {
+  approved_amount: "Indicative amount",
+  quantity_received: "Quantity received",
+  amount: "Amount",
+  budget_head: "Budget head",
+  sub_head: "Sub-head",
+  amc_recommendation: "AMC recommendation",
+  method_other_text: "Custom method",
+  head_other_text: "Custom head",
+  vendor_name: "Vendor name",
+  po_number: "PO number",
+  invoice_number: "Invoice number",
+  payment_reference: "Payment reference",
+  cheque_number: "Cheque number",
+  transaction_number: "Transaction number",
+  justification: "Justification",
+  category: "Category",
+  remarks: "Remarks",
+};
+
+function fieldLabel(name: string): string {
+  return (
+    FIELD_LABELS[name] ??
+    name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
+interface ValidationIssue {
+  loc?: (string | number)[];
+  msg?: string;
+}
+
+function friendlyDetail(detail: unknown, status: number): string {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = (detail as ValidationIssue[])
+      .map((d) => {
+        const loc = Array.isArray(d.loc) ? d.loc : [];
+        const field = [...loc].reverse().find((p) => p !== "body" && p !== "query");
+        const msg = typeof d.msg === "string" ? d.msg : "is invalid";
+        return field !== undefined && field !== ""
+          ? `${fieldLabel(String(field))}: ${msg.charAt(0).toLowerCase()}${msg.slice(1)}`
+          : msg;
+      })
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join(" ");
+  }
+  if (status === 401) return "Your session expired — please sign in again.";
+  if (status === 403) return "You don't have permission for this action.";
+  if (status === 404) return "Not found — it may have been moved or deleted.";
+  if (status === 409)
+    return "This action isn't available right now — the requisition may have moved on. Refresh and try again.";
+  if (status === 422)
+    return "Some values need attention — please check the form and try again.";
+  if (status >= 500) return "Something went wrong on the server. Try again in a moment.";
+  return "Action failed. Try again.";
+}
+
 async function parseError(res: Response): Promise<string> {
   try {
     const x = (await res.json()) as { detail?: unknown };
-    return typeof x.detail === "string"
-      ? x.detail
-      : JSON.stringify(x.detail) || "Action failed";
+    return friendlyDetail(x.detail, res.status);
   } catch {
-    return "Action failed";
+    return friendlyDetail(undefined, res.status);
   }
+}
+
+// Normalise anything thrown by fetch into a human-readable message.
+export function friendlyError(err: unknown, fallback: string): string {
+  if (err instanceof TypeError) {
+    return "Can't reach the server. Check your connection and try again.";
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
 }
 
 function auth(token: string): Record<string, string> {

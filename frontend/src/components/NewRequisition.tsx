@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CheckCircle, FilePlus, Plus, Trash } from "@phosphor-icons/react";
-import { createReq, type Req } from "../lib/api";
+import { createReq, friendlyError, type Req } from "../lib/api";
 import { formatINR } from "../lib/workflow";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
@@ -95,7 +95,7 @@ export default function NewRequisition({
       setAmc("no");
       setItems([{ ...EMPTY_ROW }]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create requisition");
+      setError(friendlyError(err, "Could not create requisition"));
     } finally {
       setSubmitting(false);
     }

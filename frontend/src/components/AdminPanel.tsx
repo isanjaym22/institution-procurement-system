@@ -18,6 +18,7 @@ import {
   createDesignation,
   createStaff,
   fetchLoginAuditPaged,
+  friendlyError,
   listDepartmentsAdmin,
   listDesignations,
   listStaff,
@@ -124,7 +125,7 @@ function StaffTab({ token }: { token: string }) {
       setStaff(s);
       setDepts(d);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load staff");
+      setError(friendlyError(e, "Could not load staff"));
     } finally {
       setLoading(false);
     }
@@ -182,7 +183,7 @@ function StaffTab({ token }: { token: string }) {
       cancelEdit();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      setError(friendlyError(err, "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -201,7 +202,7 @@ function StaffTab({ token }: { token: string }) {
       setPwId(null);
       setNewPw("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Password reset failed");
+      setError(friendlyError(err, "Password reset failed"));
     } finally {
       setSaving(false);
     }
@@ -220,7 +221,7 @@ function StaffTab({ token }: { token: string }) {
       setNotice("HOD assigned (user promoted to HOD).");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "HOD assignment failed");
+      setError(friendlyError(err, "HOD assignment failed"));
     } finally {
       setSaving(false);
     }
@@ -383,7 +384,7 @@ function DepartmentsTab({ token }: { token: string }) {
       setDepts(d);
       setStaff(s);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load departments");
+      setError(friendlyError(e, "Could not load departments"));
     } finally {
       setLoading(false);
     }
@@ -418,7 +419,7 @@ function DepartmentsTab({ token }: { token: string }) {
       reset();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      setError(friendlyError(err, "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -528,7 +529,7 @@ function DesignationsTab({ token }: { token: string }) {
     try {
       setRows(await listDesignations(token));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load designations");
+      setError(friendlyError(e, "Could not load designations"));
     } finally {
       setLoading(false);
     }
@@ -562,7 +563,7 @@ function DesignationsTab({ token }: { token: string }) {
       reset();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      setError(friendlyError(err, "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -674,7 +675,7 @@ function SecurityTab({ token }: { token: string }) {
         setRows(data.rows);
         setTotal(data.total);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not load login audit");
+        setError(friendlyError(e, "Could not load login audit"));
       } finally {
         setLoading(false);
       }
@@ -708,7 +709,7 @@ function SecurityTab({ token }: { token: string }) {
       setCurrentPw("");
       setNextPw("");
     } catch (err) {
-      setPwErr(err instanceof Error ? err.message : "Password change failed");
+      setPwErr(friendlyError(err, "Password change failed"));
     } finally {
       setPwSaving(false);
     }

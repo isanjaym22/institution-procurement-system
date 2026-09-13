@@ -19,6 +19,7 @@ import {
   fetchAudit,
   fetchHistory,
   financeForward,
+  friendlyError,
   hodDecision,
   principalDecision,
   purchaseMethod,
@@ -86,7 +87,7 @@ function useRunner(onChanged: (r: Req) => void) {
     try {
       onChanged(await fn());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Action failed");
+      setError(friendlyError(e, "Action failed"));
     } finally {
       setBusy(false);
     }
@@ -215,6 +216,10 @@ function FinanceForm({ req, token, onChanged }: CardProps) {
     }
     if (!amcRec) {
       setError("AMC recommendation (Yes/No) is required.");
+      return;
+    }
+    if (amount.trim() && Number(amount) <= 0) {
+      setError("Indicative amount must be greater than 0 — or leave it blank.");
       return;
     }
     const err = mustRemarks(remarks);
@@ -399,6 +404,14 @@ function AcceptanceForm({ req, token, onChanged }: CardProps) {
     setF((prev) => ({ ...prev, [k]: v }));
   }
   function complete() {
+    if (f.quantity_received.trim() && Number(f.quantity_received) <= 0) {
+      void run(() =>
+        Promise.reject(
+          new Error("Quantity received must be greater than 0 — or leave it blank."),
+        ),
+      );
+      return;
+    }
     const body: Record<string, unknown> = {};
     if (f.brand_name.trim()) body.brand_name = f.brand_name.trim();
     if (f.specification.trim()) body.specification = f.specification.trim();
@@ -461,6 +474,14 @@ function BursarForm({ req, token, onChanged }: CardProps) {
     if (file && file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
       // Reuse runner error path via a rejected promise.
       void run(() => Promise.reject(new Error("Only PDF files are accepted.")));
+      return;
+    }
+    if (f.amount.trim() && Number(f.amount) <= 0) {
+      void run(() =>
+        Promise.reject(
+          new Error("Amount must be greater than 0 — or leave it blank."),
+        ),
+      );
       return;
     }
     void run(() => bursarRecord(token, req.id, { ...f }, file));
@@ -586,7 +607,7 @@ export default function RequisitionCard({ req, user, token, onChanged }: CardPro
     try {
       setHistory(await fetchHistory(token, req.id));
     } catch (e) {
-      setHistError(e instanceof Error ? e.message : "Could not load history");
+      setHistError(friendlyError(e, "Could not load history"));
     } finally {
       setHistBusy(false);
     }
@@ -600,7 +621,7 @@ export default function RequisitionCard({ req, user, token, onChanged }: CardPro
     try {
       setAudit(await fetchAudit(token, req.id));
     } catch (e) {
-      setAuditError(e instanceof Error ? e.message : "Could not load audit trail");
+      setAuditError(friendlyError(e, "Could not load audit trail"));
     } finally {
       setAuditBusy(false);
     }

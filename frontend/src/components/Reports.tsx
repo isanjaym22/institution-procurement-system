@@ -9,6 +9,7 @@ import {
   DEPT_SCOPED_REPORT_ROLES,
   downloadPurchaseReportPdf,
   fetchPurchaseReport,
+  friendlyError,
   listActiveDepartments,
   type Department,
   type PurchaseReportRow,
@@ -93,7 +94,7 @@ export default function Reports({ token, role }: { token: string; role: string }
       setRows(data.rows);
       setCount(data.count);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Report failed");
+      setError(friendlyError(err, "Report failed"));
     } finally {
       setLoading(false);
     }
@@ -118,7 +119,7 @@ export default function Reports({ token, role }: { token: string; role: string }
         amc: amc || undefined,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "PDF export failed");
+      setError(friendlyError(err, "PDF export failed"));
     } finally {
       setExporting(false);
     }
